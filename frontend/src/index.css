@@ -50,3 +50,88 @@
   z-index: 1;
   background-color: #222; /* Harita yüklenirken */
 }
+
+/* ===== RİSK ANİMASYONLARI (Sadece Yazı İçin) ===== */
+
+/* 1. ÇOK DÜŞÜK: Sarı -> Yeşil */
+@keyframes anim-very-low {
+  0%, 100% { color: #facc15; text-shadow: 0 0 5px rgba(250, 204, 21, 0.3); } /* Sarı */
+  50% { color: #4ade80; text-shadow: 0 0 10px rgba(74, 222, 128, 0.5); }      /* Yeşil */
+}
+.text-anim-very-low {
+  animation: anim-very-low 3s infinite ease-in-out;
+}
+
+/* 2. DÜŞÜK: Açık Yeşil -> Koyu Yeşil */
+@keyframes anim-low {
+  0%, 100% { color: #86efac; } /* Açık Yeşil */
+  50% { color: #22c55e; }      /* Koyu Yeşil */
+}
+.text-anim-low {
+  animation: anim-low 3s infinite ease-in-out;
+}
+
+/* 3. ORTA: Turuncu (Nabız) */
+@keyframes anim-medium {
+  0%, 100% { color: #fb923c; opacity: 1; }  /* Turuncu */
+  50% { color: #ea580c; opacity: 0.7; }     /* Koyu Turuncu */
+}
+.text-anim-medium {
+  animation: anim-medium 2s infinite ease-in-out;
+}
+
+/* 4. YÜKSEK: Turuncu -> Kırmızı */
+@keyframes anim-high {
+  0%, 100% { color: #f97316; } /* Turuncu */
+  50% { color: #dc2626; }      /* Kırmızı */
+}
+.text-anim-high {
+  animation: anim-high 1.5s infinite linear;
+}
+
+/* 5. KRİTİK TAHLİYE: Kırmızı -> Koyu Kırmızı (Alarm - Neon Etkisi) */
+@keyframes anim-critical {
+  0%, 100% { color: #ef4444; transform: scale(1); } 
+  50% { color: #991b1b;  transform: scale(1.05); }      
+}
+.text-anim-critical {
+  animation: anim-critical 0.8s infinite alternate;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+/* ===== VOLCANO SCROLLBAR (Özel Kaydırma Çubuğu) ===== */
+
+/* Kaydırma çubuğunun genel genişliği */
+.volcano-scrollbar::-webkit-scrollbar {
+  width: 6px; /* İnce ve zarif */
+}
+
+/* Kaydırma yolu (Arka plan) */
+.volcano-scrollbar::-webkit-scrollbar-track {
+  background: transparent; /* Şeffaf olsun, kutu rengini alsın */
+  border-radius: 3px;
+}
+
+/* Kaydırma çubuğu tutacağı (Thumb) - LIGHT MODE Varsayılan */
+.volcano-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-light-border); /* Açık kırmızımsı/turuncu */
+  border-radius: 10px;
+}
+
+.volcano-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-volcano-orange); /* Üzerine gelince koyulaşsın */
+}
+
+/* DARK MODE için Renkler */
+.dark .volcano-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05); /* Çok hafif belli belirsiz yol */
+}
+
+.dark .volcano-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-volcano-orange); /* Yanardağ turuncusu */
+}
+
+.dark .volcano-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-volcano-red); /* Üzerine gelince magma kırmızısı */
+}

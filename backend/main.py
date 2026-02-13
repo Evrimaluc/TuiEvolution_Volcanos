@@ -1,4 +1,3 @@
-# backend/main.py
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,7 +5,6 @@ import simulation_logic
 
 app = FastAPI()
 
-# React ile iletişim izni (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,7 +13,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Frontend'den gelecek veri formatı
 class VolcanoRequest(BaseModel):
     name: str
     elevation: float
@@ -23,9 +20,6 @@ class VolcanoRequest(BaseModel):
 
 @app.post("/calculate")
 async def calculate(data: VolcanoRequest):
-    print(f"Simülasyon isteği alındı: {data.name}, Yükseklik: {data.elevation}m")
-    
-    # Yeni mantık: Tek bir fonksiyon tüm işi yapar
-    results = simulation_logic.run_simulation(data.elevation)
-    
+    # Simülasyonu çağır
+    results = simulation_logic.run_full_simulation(data.elevation, data.name)
     return results

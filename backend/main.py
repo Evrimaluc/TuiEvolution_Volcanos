@@ -6,7 +6,6 @@ import random
 
 app = FastAPI()
 
-# CORS: Frontend'in Backend'e erişmesine izin ver
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,124 +21,119 @@ class Location(BaseModel):
 class VolcanoRequest(BaseModel):
     name: str
     elevation: float
-    status: str
+    status: str  # YENİ: Yanardağın aktiflik durumu
     location: Location
 
-# --- BİLİMSEL HESAPLAMA FONKSİYONLARI ---
+# --- BİLİMSEL HESAPLAMA MOTORU ---
 
 def get_activity_factor(status: str) -> float:
     """
-    Yanardağın statüsüne göre tehlike katsayısı belirler.
-    Active: 1.0 (Tam Tehlike)
-    Dormant (Uyuyan): 0.2 (Düşük basınç, gaz çıkışı riski)
-    Extinct (Sönmüş): 0.0 (Risk yok denecek kadar az)
+    Yanardağ durumuna göre risk katsayısı.
     """
-    s = status.lower()
-    if "active" in s or "erupting" in s:
-        return 1.0
-    elif "dormant" in s or "potentially" in s:
-        return 0.2
-    elif "extinct" in s:
-        return 0.05
-    return 0.5 # Bilinmeyen durumlar için orta karar
+    s = str(status).lower()
+    if "historical" in s or "active" in s or "erupting" in s:
+        return 1.0  # Aktif
+    elif "dormant" in s or "holocene" in s: # Holocene: Son 10.000 yılda patlamış ama şu an uykuda olabilir
+        return 0.3  # Uyuyan (Düşük Risk)
+    elif "extinct" in s or "pleistocene" in s:
+        return 0.05 # Sönmüş (Çok Düşük Risk)
+    return 0.5 # Bilinmeyen
 
 def calculate_atmosphere(lat: float, elevation: float):
     """
-    Konuma ve yüksekliğe dayalı atmosferik modelleme.
-    Canlı API yerine coğrafi fizik kuralları kullanılır.
+    Coğrafi konuma dayalı atmosfer simülasyonu.
     """
-    # 1. Sıcaklık Hesabı (Enlem etkisi + Yükseklik etkisi)
-    # Ekvatorda (0°) ortalama 30°C, Kutuplarda (90°) -20°C baz alınır.
-    lat_factor = 1 - (abs(lat) / 90) 
-    base_temp = -20 + (50 * lat_factor) # -20 ile 30 arası
+    # 1. Sıcaklık (Enlem ve Yükseklik Etkisi)
+    # Ekvator (0°) ~30°C, Kutuplar (90°) ~-20°C
+    lat_factor = 1 - (abs(lat) / 90)
+    base_temp = -15 + (45 * lat_factor) 
     
     # Lapse Rate: Her 1000m'de 6.5°C düşüş
     final_temp = base_temp - (elevation / 1000 * 6.5)
     
-    # 2. Rüzgar Hesabı (Jet Stream ve Yükseklik)
-    # Yüksek irtifada rüzgar logaritmik artar.
-    # 30°-60° enlemleri arası (Westerlies) rüzgar daha şiddetlidir.
-    wind_lat_bonus = 10 if 30 < abs(lat) < 60 else 0
-    wind_speed = 5 + (elevation / 400) + wind_lat_bonus + random.uniform(-2, 5)
+    # 2. Rüzgar (Yükseklik Etkisi)
+    # Yüksek irtifada sürtünme azalır, rüzgar artar.
+    base_wind = 5 + (elevation / 500) + random.uniform(-2, 5)
+    wind_speed = max(0, base_wind) # Negatif olamaz
     
-    # Rüzgar yönü sapma katsayısı (Coriolis)
-    drag_factor = 0.1 + (wind_speed / 100)
+    # Sürüklenme Katsayısı
+    drag_factor = 0.1 + (wind_speed / 50)
+
+    # Durum Metni
+    if wind_speed > 25: behavior = "Fırtınalı Dağılım"
+    elif wind_speed > 10: behavior = "Sürüklenen Bulut"
+    else: behavior = "Stabil Duman"
 
     return {
         "temp_c": round(final_temp, 1),
         "wind_speed": round(wind_speed, 1),
         "drag_factor": round(min(drag_factor, 1.0), 2),
-        "condition": "Fırtınalı" if wind_speed > 20 else "Rüzgarlı" if wind_speed > 10 else "Sakin"
+        "plume_behavior": behavior
     }
 
 @app.post("/calculate")
 async def calculate_risk(volcano: VolcanoRequest):
     try:
-        # 1. Aktivite Çarpanı (Mauna Kea sorununu çözer)
         activity = get_activity_factor(volcano.status)
-        
-        # 2. Atmosfer Verisi
         atmos = calculate_atmosphere(volcano.location.lat, volcano.elevation)
         
-        # 3. Fiziksel Simülasyon (Basınç ve Enerji)
-        # Sönmüş yanardağda basınç birikimi olmaz.
-        magma_chamber_pressure = (volcano.elevation * 2000 * activity) 
+        # 1. Magma Basıncı (Paskal)
+        # Aktif yanardağlarda basınç tam, pasiflerde %30 seviyesinde simüle edilir.
+        pressure = (volcano.elevation * 3000 * activity) + 100000 
         
-        # Monte Carlo Varyasyonu (Simülasyona doğallık katar)
-        uncertainty = random.uniform(0.9, 1.1)
+        # 2. Monte Carlo Varyasyonu
+        variance = random.uniform(0.9, 1.1)
         
-        # Ezilme Mesafesi (Risk Alanı)
-        # d = v^2 / g (Basitleştirilmiş balistik)
-        # v (çıkış hızı) basınçla orantılıdır.
-        blast_radius = (magma_chamber_pressure ** 0.5) / 9.81 * uncertainty
+        # 3. Ezilme Mesafesi (Balistik)
+        # Basınç ne kadar yüksekse kayaçlar o kadar uzağa fırlar.
+        blast_radius = (pressure ** 0.45) / 9.81 * variance
         
-        # Güvenli Bölge
-        safe_zone = blast_radius * 1.5 if blast_radius > 100 else 500 # En az 500m
-        
-        # Volkanik Patlama İndeksi (VEI) Tahmini (0-8 arası logaritmik)
-        if blast_radius > 0:
-            vei_score = math.log10(blast_radius) 
-        else:
-            vei_score = 0
+        # Sönmüş yanardağlar için yarıçapı çok küçült
+        if activity < 0.2: 
+            blast_radius = blast_radius / 10
 
-        # Nihai Risk Kararı
-        if vei_score < 1 or activity < 0.1:
-            decision = "ÇOK DÜŞÜK RİSK" # Sönmüş/Pasif Dağlar
-        elif vei_score < 2.5:
-            decision = "DÜŞÜK RİSK"
-        elif vei_score < 3.5:
-            decision = "ORTA SEVİYE RİSK"
-        elif vei_score < 5:
-            decision = "YÜKSEK RİSK"
-        else:
-            decision = "KRİTİK - ACİL TAHLİYE"
+        # 4. Volkanik Patlama İndeksi (VEI Tahmini)
+        vei_score = math.log10(max(blast_radius, 1)) * activity * 1.5
 
-        # Etki Noktaları (Isı ve Enerji Yayılımı)
+        # 5. Nihai Karar
+        if vei_score < 1: decision = "ÇOK DÜŞÜK RİSK"
+        elif vei_score < 2.5: decision = "DÜŞÜK RİSK"
+        elif vei_score < 4.0: decision = "ORTA SEVİYE RİSK"
+        elif vei_score < 5.5: decision = "YÜKSEK RİSK"
+        else: decision = "KRİTİK TAHLİYE!"
+
+        # 6. Etki Noktaları
         impact_points = []
         for dist in [5, 10, 20, 50]:
-            # Mesafe arttıkça etki azalır (Inverse Square Law)
-            energy = (magma_chamber_pressure / (dist**2)) * uncertainty
-            temp = atmos["temp_c"] + (1000 * activity / dist) # Lav ısısı etkisi
-            
+            # Mesafe arttıkça enerji düşer
+            energy = (pressure / (dist ** 2)) * variance
+            # Sıcaklık lav akışına göre düşer
+            temp_drop = 50 * dist 
+            lava_temp = (1200 * activity) - temp_drop
+            final_point_temp = max(atmos["temp_c"], lava_temp)
+
             impact_points.append({
                 "distance_km": dist,
-                "temp_c": int(temp),
+                "temp_c": int(final_point_temp),
                 "energy_j": int(energy),
-                "label": f"{dist}km Çapı"
+                "label": f"{dist}km Menzil"
             })
 
-        # Partikül Yayılımı (Rüzgar Yönünde)
+        # 7. Güvenli Bölge
+        safe_zone = blast_radius * 1.2 if activity > 0.2 else 0
+
+        # 8. Parçacık Yayılımı (3D)
         particle_spread = {
             "x": blast_radius * (1 + atmos["wind_speed"]/10),
-            "y": blast_radius * 0.8,
-            "z": volcano.elevation + (blast_radius / 2)
+            "y": blast_radius * 0.9,
+            "z": volcano.elevation + (pressure / 5000)
         }
 
         return {
             "monte_carlo": {
-                "density": int(2600 * uncertainty),
-                "pressure": magma_chamber_pressure,
-                "temp": int(1200 * activity) if activity > 0 else int(atmos["temp_c"])
+                "density": int(2600 * variance),
+                "pressure": pressure,
+                "temp": int(1200 * activity) if activity > 0.1 else int(atmos["temp_c"])
             },
             "crush_distance": blast_radius,
             "safe_zone": safe_zone,

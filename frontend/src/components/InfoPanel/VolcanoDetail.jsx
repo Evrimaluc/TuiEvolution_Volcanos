@@ -6,7 +6,7 @@ export default function VolcanoDetail({ selectedVolcano, onBack, onSimulate, loa
         
         <button 
             onClick={onBack} 
-            className="text-xs flex items-center gap-1 opacity-70 hover:opacity-100 hover:text-volcano-orange transition-colors mb-1 self-start sticky top-0 bg-inherit z-10 py-2"
+            className="text-xs flex items-center gap-1 opacity-70 hover:opacity-100 hover:text-volcano-orange transition-colors mb-1 self-start sticky top-0 bg-inherit z-10 py-2 backdrop-blur-sm w-full"
         >
             <ArrowLeft size={12}/> Listeye Geri Dön
         </button>
@@ -24,11 +24,11 @@ export default function VolcanoDetail({ selectedVolcano, onBack, onSimulate, loa
         <div className="flex justify-between items-center p-2 rounded bg-black/10">
             <span>Durum:</span>
             <span className={`font-bold px-2 py-0.5 rounded text-sm ${
-                selectedVolcano.status === 'Active' 
+                selectedVolcano.status.includes('Active') 
                 ? 'bg-red-900/50 text-red-400 border border-red-500' 
                 : 'bg-green-900/50 text-green-400 border border-green-500'
             }`}>
-                {selectedVolcano.status === 'Active' ? 'AKTİF 🌋' : 'PASİF 💤'}
+                {selectedVolcano.status}
             </span>
         </div>
         
@@ -36,7 +36,6 @@ export default function VolcanoDetail({ selectedVolcano, onBack, onSimulate, loa
             {selectedVolcano.name}, {selectedVolcano.continent} kıtasında, {selectedVolcano.country} ülkesinde yer almaktadır.
         </div>
 
-        {/* Simülasyon Butonu */}
         <div className="pt-4 mt-auto pb-2">
             <button 
                 onClick={onSimulate}

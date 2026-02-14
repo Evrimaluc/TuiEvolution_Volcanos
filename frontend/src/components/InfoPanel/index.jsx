@@ -15,7 +15,6 @@ export default function InfoPanel({
   return (
     <div className={`p-6 rounded-xl border-2 flex flex-col h-full shadow-lg transition-all overflow-hidden ${cardClass}`} style={{maxHeight: '100%'}}>
         
-        {/* Üst Başlık (Sabit) */}
         <div className="flex-shrink-0">
             <h2 className={`text-xl font-bold border-b pb-2 mb-4 flex items-center gap-2
               ${darkMode ? 'border-volcano-red text-white' : 'border-light-border text-stone-800'}`}>
@@ -24,12 +23,11 @@ export default function InfoPanel({
             </h2>
         </div>
         
-        {/* İçerik Değiştirici */}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0 relative">
             {selectedVolcano ? (
                 <VolcanoDetail 
                     selectedVolcano={selectedVolcano}
-                    onBack={() => setSelectedVolcano(null)}
+                    onBack={() => setSelectedVolcano(null)} // Geri dönünce liste geri gelir
                     onSimulate={handleCalculate}
                     loading={loading}
                     darkMode={darkMode}

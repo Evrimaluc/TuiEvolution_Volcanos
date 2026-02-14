@@ -1,18 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
 import 'leaflet/dist/leaflet.css';
-import axios from 'axios';
 import Papa from 'papaparse';
 import L from 'leaflet';
 
 import magmaDarkBg from '/assets/magma-bg.jpg';
 import magmaLightBg from '/assets/magma_ligthmode.png';
 
+// Bileşenler
 import Header from './components/Header';
 import FilterUI from './components/FilterUI';
 import VolcanoMap from './components/VolcanoMap';
-import InfoPanel from './components/InfoPanel';
+import InfoPanel from './components/InfoPanel'; // Yeni klasör yapısını import eder
 import SimulationResults from './components/SimulationResults';
+
+// Yardımcılar ve Servisler
 import { getContinent } from './utils/helpers';
+import { runSimulation } from './services/simulationService';
 
 // Leaflet İkon Düzeltmesi
 delete L.Icon.Default.prototype._getIconUrl;
@@ -23,7 +26,6 @@ L.Icon.Default.mergeOptions({
 });
 
 export default function App() {
-  // --- STATE YÖNETİMİ ---
   const [volcanoes, setVolcanoes] = useState([]); 
   const [selectedVolcano, setSelectedVolcano] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -34,16 +36,9 @@ export default function App() {
   // Filtre State'leri
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   
-  // Sıfırlama işlemi için başlangıç değeri
-  const initialFilterState = {
-    status: [],
-    elevation: [],
-    continent: [],
-    country: []
-  };
-
-  const [appliedFilters, setAppliedFilters] = useState(initialFilterState);
-  const [tempFilters, setTempFilters] = useState(initialFilterState);
+  const initialFilters = { status: [], elevation: [], continent: [], country: [] };
+  const [appliedFilters, setAppliedFilters] = useState(initialFilters);
+  const [tempFilters, setTempFilters] = useState(initialFilters);
 
   // --- HELPER VERİLER ---
   const dynamicOptions = useMemo(() => {
@@ -58,8 +53,9 @@ export default function App() {
     return [...new Set(filteredByContinent.map(v => v.country))].sort();
   }, [volcanoes, tempFilters.continent]);
 
-  // --- VERİ YÜKLEME (CSV) ---
+  // --- VERİ OKUMA ---
   useEffect(() => {
+    // processed_volcanoes.csv public klasöründe olmalı!
     Papa.parse('/processed_volcanoes.csv', {
       download: true,
       header: true,
@@ -105,12 +101,10 @@ export default function App() {
       
       if (!matchesSearch) return false;
 
-      // Status Filtresi
       if (appliedFilters.status.length > 0 && !appliedFilters.status.includes(v.status)) return false;
       
-      // Elevation Filtresi
       if (appliedFilters.elevation.length > 0) {
-         // (Basit label kontrolü)
+         // (Basit label kontrolü - Önceki mantığın aynısı)
          const labels = appliedFilters.elevation;
          let match = false;
          if(labels.includes('0 - 1000m') && v.elevation < 1000) match = true;
@@ -120,11 +114,9 @@ export default function App() {
          if(labels.includes('4000m - 5000m') && v.elevation >= 4000 && v.elevation < 5000) match = true;
          if(labels.includes('5000m - 6000m') && v.elevation >= 5000 && v.elevation < 6000) match = true;
          if(labels.includes('6000m+') && v.elevation >= 6000) match = true;
-         
          if (!match) return false;
       }
 
-      // Continent & Country
       if (appliedFilters.continent.length > 0 && !appliedFilters.continent.includes(v.continent)) return false;
       if (appliedFilters.country.length > 0 && !appliedFilters.country.includes(v.country)) return false;
 
@@ -132,17 +124,17 @@ export default function App() {
     });
   }, [volcanoes, searchTerm, appliedFilters]);
 
-  // --- AKSİYONLAR ---
+  // --- HANDLERS ---
 
   // ÖNEMLİ: Seçim yapıldığında filtreleri ve aramayı sıfırla
   const handleSelectFromList = (volcano) => {
       setSelectedVolcano(volcano);
       setResults(null);
       
-      // SIFIRLAMA MANTIĞI BURADA
-      setSearchTerm(""); // Arama kutusunu temizle
-      setAppliedFilters(initialFilterState); // Filtreleri temizle (Harita geneline dön)
-      setTempFilters(initialFilterState); // Geçici filtreleri de temizle
+      // UX: Seçim yapıldığında kullanıcı tüm odağı o dağa versin diye filtreleri temizliyoruz
+      setSearchTerm(""); 
+      setAppliedFilters(initialFilters);
+      setTempFilters(initialFilters);
   };
 
   const toggleTempFilter = (category, value) => {
@@ -180,20 +172,12 @@ export default function App() {
     setLoading(true);
     setResults(null);
     try {
-      // Backend'e status verisini de gönderiyoruz
-      const response = await axios.post('http://localhost:8000/calculate', {
-        name: selectedVolcano.name,
-        elevation: selectedVolcano.elevation,
-        status: selectedVolcano.status, // ARTIK DURUMU DA GÖNDERİYORUZ
-        location: { lat: selectedVolcano.position[0], lng: selectedVolcano.position[1] }
-      });
-      
+      const data = await runSimulation(selectedVolcano);
       setTimeout(() => {
-        setResults(response.data);
+        setResults(data);
         setLoading(false);
       }, 500);
     } catch (error) {
-      console.error("Hata:", error);
       setLoading(false);
       alert("Simülasyon sunucusu yanıt vermedi.");
     }
@@ -227,10 +211,8 @@ export default function App() {
         />
 
         <main className="container mx-auto p-4 space-y-6 flex-1 flex flex-col">
-            {/* Üst Kısım Grid: Sabit Yükseklik */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[550px]">
                 
-                {/* SOL: HARİTA VE FİLTRE */}
                 <div className={`md:col-span-2 rounded-xl overflow-hidden border-4 shadow-2xl relative z-10 flex flex-col
                     ${darkMode ? 'border-dark-border' : 'border-light-border'}`}>
                     
@@ -261,7 +243,6 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* SAĞ: BİLGİ PANELİ */}
                 <InfoPanel 
                     selectedVolcano={selectedVolcano}
                     setSelectedVolcano={setSelectedVolcano}
@@ -274,7 +255,6 @@ export default function App() {
                 />
             </div>
 
-            {/* SONUÇLAR */}
             <SimulationResults 
                 results={results} 
                 loading={loading} 

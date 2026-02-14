@@ -1,22 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
 import 'leaflet/dist/leaflet.css';
+import axios from 'axios';
 import Papa from 'papaparse';
 import L from 'leaflet';
 
 import magmaDarkBg from '/assets/magma-bg.jpg';
 import magmaLightBg from '/assets/magma_ligthmode.png';
 
-// Components
 import Header from './components/Header';
 import FilterUI from './components/FilterUI';
 import VolcanoMap from './components/VolcanoMap';
-import InfoPanel from './components/InfoPanel'; // Yeni index.jsx'i otomatik alır
+import InfoPanel from './components/InfoPanel';
 import SimulationResults from './components/SimulationResults';
-
-// Utils & Services
 import { getContinent } from './utils/helpers';
-import { runSimulation } from './services/simulationService'; // Yeni servis
 
+// Leaflet İkon Düzeltmesi
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -25,6 +23,7 @@ L.Icon.Default.mergeOptions({
 });
 
 export default function App() {
+  // --- STATE YÖNETİMİ ---
   const [volcanoes, setVolcanoes] = useState([]); 
   const [selectedVolcano, setSelectedVolcano] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -35,13 +34,31 @@ export default function App() {
   // Filtre State'leri
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   
-  // Varsayılan boş filtre durumu (Resetlemek için kullanacağız)
-  const initialFilterState = { status: [], elevation: [], continent: [], country: [] };
-  
+  // Sıfırlama işlemi için başlangıç değeri
+  const initialFilterState = {
+    status: [],
+    elevation: [],
+    continent: [],
+    country: []
+  };
+
   const [appliedFilters, setAppliedFilters] = useState(initialFilterState);
   const [tempFilters, setTempFilters] = useState(initialFilterState);
 
-  // --- DATA LOADING ---
+  // --- HELPER VERİLER ---
+  const dynamicOptions = useMemo(() => {
+    const countries = [...new Set(volcanoes.map(v => v.country))].sort();
+    const regions = [...new Set(volcanoes.map(v => v.continent))].sort();
+    return { countries, regions };
+  }, [volcanoes]);
+
+  const availableCountries = useMemo(() => {
+    if (tempFilters.continent.length === 0) return [];
+    const filteredByContinent = volcanoes.filter(v => tempFilters.continent.includes(v.continent));
+    return [...new Set(filteredByContinent.map(v => v.country))].sort();
+  }, [volcanoes, tempFilters.continent]);
+
+  // --- VERİ YÜKLEME (CSV) ---
   useEffect(() => {
     Papa.parse('/processed_volcanoes.csv', {
       download: true,
@@ -61,7 +78,7 @@ export default function App() {
             regionRaw: v['Location'],
             continent: getContinent(v['Location'], v['Country']),
             elevation: v['Elevation (m)'],
-            status: v['Last Known Eruption'] || 'Unknown', // Status backend için önemli
+            status: v['Last Known Eruption'] || 'Unknown',
             position: [v['Latitude'], v['Longitude']]
         }));
         setVolcanoes(processedData);
@@ -78,29 +95,36 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // --- FİLTRELEME & ARAMA MANTIĞI ---
+  // --- FİLTRELEME MANTIĞI ---
   const displayVolcanoes = useMemo(() => {
     return volcanoes.filter(v => {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = v.name?.toLowerCase().includes(searchLower) ||
-                            v.country?.toLowerCase().includes(searchLower);
+                            v.country?.toLowerCase().includes(searchLower) ||
+                            v.continent?.toLowerCase().includes(searchLower);
+      
       if (!matchesSearch) return false;
 
+      // Status Filtresi
       if (appliedFilters.status.length > 0 && !appliedFilters.status.includes(v.status)) return false;
       
-      // Yükseklik Filtresi
+      // Elevation Filtresi
       if (appliedFilters.elevation.length > 0) {
-         // (Yardımcı dosyadaki label'a göre kontrol et - önceki kodla aynı mantık)
-         // ...Basitlik için burayı kısa tutuyorum, önceki mantıkla aynı...
+         // (Basit label kontrolü)
          const labels = appliedFilters.elevation;
          let match = false;
          if(labels.includes('0 - 1000m') && v.elevation < 1000) match = true;
          if(labels.includes('1000m - 2000m') && v.elevation >= 1000 && v.elevation < 2000) match = true;
-         // ... diğer aralıklar ...
+         if(labels.includes('2000m - 3000m') && v.elevation >= 2000 && v.elevation < 3000) match = true;
+         if(labels.includes('3000m - 4000m') && v.elevation >= 3000 && v.elevation < 4000) match = true;
+         if(labels.includes('4000m - 5000m') && v.elevation >= 4000 && v.elevation < 5000) match = true;
+         if(labels.includes('5000m - 6000m') && v.elevation >= 5000 && v.elevation < 6000) match = true;
          if(labels.includes('6000m+') && v.elevation >= 6000) match = true;
-         if (!match && appliedFilters.elevation.length > 0) return false; // Basitleştirilmiş kontrol
+         
+         if (!match) return false;
       }
 
+      // Continent & Country
       if (appliedFilters.continent.length > 0 && !appliedFilters.continent.includes(v.continent)) return false;
       if (appliedFilters.country.length > 0 && !appliedFilters.country.includes(v.country)) return false;
 
@@ -108,17 +132,47 @@ export default function App() {
     });
   }, [volcanoes, searchTerm, appliedFilters]);
 
-  // --- HANDLERS ---
-  
-  // Seçim yapıldığında ARAMA VE FİLTRELERİ SIFIRLA
+  // --- AKSİYONLAR ---
+
+  // ÖNEMLİ: Seçim yapıldığında filtreleri ve aramayı sıfırla
   const handleSelectFromList = (volcano) => {
       setSelectedVolcano(volcano);
       setResults(null);
       
-      // İsteğe bağlı: Arama ve filtreyi temizle ki kullanıcı tüm haritayı tekrar görebilsin
-      // setSearchTerm(""); 
-      // setAppliedFilters(initialFilterState);
-      // setTempFilters(initialFilterState);
+      // SIFIRLAMA MANTIĞI BURADA
+      setSearchTerm(""); // Arama kutusunu temizle
+      setAppliedFilters(initialFilterState); // Filtreleri temizle (Harita geneline dön)
+      setTempFilters(initialFilterState); // Geçici filtreleri de temizle
+  };
+
+  const toggleTempFilter = (category, value) => {
+    setTempFilters(prev => {
+      const currentList = prev[category];
+      let newList = currentList.includes(value) 
+        ? currentList.filter(item => item !== value) 
+        : [...currentList, value];
+      return { ...prev, [category]: newList };
+    });
+  };
+
+  const applyFilters = () => {
+    setAppliedFilters(tempFilters);
+    setIsFilterMenuOpen(false);
+    setSelectedVolcano(null);
+  };
+
+  const removeFilter = (category, value) => {
+    const removeFromState = (state) => ({
+      ...state,
+      [category]: state[category].filter(item => item !== value)
+    });
+    setAppliedFilters(removeFromState);
+    setTempFilters(removeFromState);
+  };
+
+  const openFilterMenu = () => {
+    setTempFilters(appliedFilters);
+    setIsFilterMenuOpen(!isFilterMenuOpen);
   };
 
   const handleCalculate = async () => {
@@ -126,53 +180,32 @@ export default function App() {
     setLoading(true);
     setResults(null);
     try {
-      // Yeni servisi kullan
-      const data = await runSimulation(selectedVolcano);
+      // Backend'e status verisini de gönderiyoruz
+      const response = await axios.post('http://localhost:8000/calculate', {
+        name: selectedVolcano.name,
+        elevation: selectedVolcano.elevation,
+        status: selectedVolcano.status, // ARTIK DURUMU DA GÖNDERİYORUZ
+        location: { lat: selectedVolcano.position[0], lng: selectedVolcano.position[1] }
+      });
       
       setTimeout(() => {
-        setResults(data);
+        setResults(response.data);
         setLoading(false);
       }, 500);
     } catch (error) {
+      console.error("Hata:", error);
       setLoading(false);
       alert("Simülasyon sunucusu yanıt vermedi.");
     }
   };
 
-  // Diğer helper ve state setter'ları (filtreleme için)
-  // Bu kısımlar önceki FilterUI entegrasyonuyla aynı kalacak, sadece prop olarak geçiyoruz.
-  // ... (toggleTempFilter, applyFilters, removeFilter vb.)
-  // Kod tekrarını önlemek için burayı kısa tutuyorum, önceki App.jsx'teki fonksiyonları buraya yapıştır.
-  const toggleTempFilter = (category, value) => {
-    setTempFilters(prev => {
-        const currentList = prev[category];
-        let newList = currentList.includes(value) ? currentList.filter(i => i !== value) : [...currentList, value];
-        return { ...prev, [category]: newList };
-    });
-  };
-  const applyFilters = () => { setAppliedFilters(tempFilters); setIsFilterMenuOpen(false); setSelectedVolcano(null); };
-  const removeFilter = (category, value) => { 
-      const newState = { ...appliedFilters, [category]: appliedFilters[category].filter(i => i !== value) };
-      setAppliedFilters(newState); setTempFilters(newState);
-  };
-  const openFilterMenu = () => { setTempFilters(appliedFilters); setIsFilterMenuOpen(!isFilterMenuOpen); };
-
-  // Dinamik Veriler
-  const dynamicOptions = useMemo(() => {
-      const countries = [...new Set(volcanoes.map(v => v.country))].sort();
-      const regions = [...new Set(volcanoes.map(v => v.continent))].sort();
-      return { countries, regions };
-  }, [volcanoes]);
+  const inputBgClass = darkMode 
+    ? 'bg-black/50 border-dark-border text-white placeholder-gray-400' 
+    : 'bg-white/80 border-light-border text-stone-800 placeholder-stone-500';
   
-  const availableCountries = useMemo(() => {
-      if (tempFilters.continent.length === 0) return [];
-      const filtered = volcanoes.filter(v => tempFilters.continent.includes(v.continent));
-      return [...new Set(filtered.map(v => v.country))].sort();
-  }, [volcanoes, tempFilters.continent]);
-
-  // STYLES
-  const inputBgClass = darkMode ? 'bg-black/50 border-dark-border text-white placeholder-gray-400' : 'bg-white/80 border-light-border text-stone-800 placeholder-stone-500';
-  const cardClass = darkMode ? 'bg-dark-surface/90 border-dark-border backdrop-blur-sm' : 'bg-white/90 border-light-border backdrop-blur-sm shadow-xl';
+  const cardClass = darkMode 
+    ? 'bg-dark-surface/90 border-dark-border backdrop-blur-sm' 
+    : 'bg-white/90 border-light-border backdrop-blur-sm shadow-xl';
 
   return (
     <div 
@@ -194,9 +227,13 @@ export default function App() {
         />
 
         <main className="container mx-auto p-4 space-y-6 flex-1 flex flex-col">
+            {/* Üst Kısım Grid: Sabit Yükseklik */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[550px]">
                 
-                <div className={`md:col-span-2 rounded-xl overflow-hidden border-4 shadow-2xl relative z-10 flex flex-col ${darkMode ? 'border-dark-border' : 'border-light-border'}`}>
+                {/* SOL: HARİTA VE FİLTRE */}
+                <div className={`md:col-span-2 rounded-xl overflow-hidden border-4 shadow-2xl relative z-10 flex flex-col
+                    ${darkMode ? 'border-dark-border' : 'border-light-border'}`}>
+                    
                     <FilterUI 
                         darkMode={darkMode}
                         isFilterMenuOpen={isFilterMenuOpen}
@@ -212,6 +249,7 @@ export default function App() {
                         dynamicOptions={dynamicOptions}
                         availableCountries={availableCountries}
                     />
+
                     <div className="flex-1 w-full h-full relative z-0">
                         <VolcanoMap 
                             darkMode={darkMode}
@@ -223,6 +261,7 @@ export default function App() {
                     </div>
                 </div>
 
+                {/* SAĞ: BİLGİ PANELİ */}
                 <InfoPanel 
                     selectedVolcano={selectedVolcano}
                     setSelectedVolcano={setSelectedVolcano}
@@ -235,6 +274,7 @@ export default function App() {
                 />
             </div>
 
+            {/* SONUÇLAR */}
             <SimulationResults 
                 results={results} 
                 loading={loading} 
